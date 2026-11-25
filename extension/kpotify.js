@@ -24,6 +24,7 @@
   let pillEl = null;
   let menuEl = null;
   let statusBadgeEl = null;
+  let lastErrorMsg = "";
 
   function loadCache() {
     try {
@@ -340,18 +341,57 @@
   }
 
   async function fetchGoogleTranslate(text) {
-    const url =
+    const gtxUrl =
       "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=" +
       encodeURIComponent(text);
-    const res = await fetch(url);
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+
+    const parseGtx = (data) => {
+      if (!Array.isArray(data) || !Array.isArray(data[0])) {
+        throw new Error("Unexpected GTX format");
+      }
+      return data[0].map((seg) => (Array.isArray(seg) ? seg[0] || "" : "")).join("");
+    };
+
+    try {
+      const res = await fetch(gtxUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return parseGtx(await res.json());
+    } catch (err1) {
+      // Fallback 1: XMLHttpRequest
+      try {
+        const xhrData = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", gtxUrl, true);
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                resolve(JSON.parse(xhr.responseText));
+              } catch (e) {
+                reject(e);
+              }
+            } else {
+              reject(new Error(`XHR ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error("XHR network error"));
+          xhr.send();
+        });
+        return parseGtx(xhrData);
+      } catch (err2) {
+        // Fallback 2: clients5.google.com
+        const c5Url =
+          "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=ko&q=" +
+          encodeURIComponent(text);
+        const res2 = await fetch(c5Url);
+        if (!res2.ok) throw new Error(`C5 HTTP ${res2.status} (${err1.message})`);
+        const d2 = await res2.json();
+        if (Array.isArray(d2)) {
+          if (typeof d2[0] === "string") return d2[0];
+          if (Array.isArray(d2[0])) return d2[0].map((s) => (Array.isArray(s) ? s[0] : s)).join("");
+        }
+        throw new Error(`Fallback failed: ${err1.message}`);
+      }
     }
-    const data = await res.json();
-    if (!Array.isArray(data) || !Array.isArray(data[0])) {
-      throw new Error("Unexpected response format");
-    }
-    return data[0].map((seg) => (Array.isArray(seg) ? seg[0] || "" : "")).join("");
   }
 
   async function translateBatch(lines) {
@@ -361,11 +401,13 @@
       try {
         const translated = (await fetchGoogleTranslate(text)).trim();
         if (translated) {
+          lastErrorMsg = "";
           cache.set(text, translated);
           scheduleSaveCache();
         }
-      } catch {
-        // Ignore transient failure
+      } catch (e) {
+        lastErrorMsg = e && e.message ? e.message : "번역 실패";
+        console.error("[Kpotify]", e);
       }
       return;
     }
@@ -375,6 +417,7 @@
       const translatedJoined = await fetchGoogleTranslate(joined);
       const parts = translatedJoined.split("\n");
       if (parts.length === lines.length) {
+        lastErrorMsg = "";
         for (let i = 0; i < lines.length; i++) {
           const t = parts[i].trim();
           if (t) cache.set(lines[i], t);
@@ -382,8 +425,9 @@
         scheduleSaveCache();
         return;
       }
-    } catch {
-      // Fall through to split/individual fallback
+    } catch (e) {
+      lastErrorMsg = e && e.message ? e.message : "번역 실패";
+      console.error("[Kpotify]", e);
     }
 
     // Fallback: split in half so line alignment stays exact
@@ -429,6 +473,13 @@
     } finally {
       isProcessingQueue = false;
       if (pillEl) pillEl.classList.remove("is-loading");
+      if (statusBadgeEl) {
+        if (lastErrorMsg && currentMode !== "off") {
+          statusBadgeEl.textContent = `오류: ${lastErrorMsg.slice(0, 22)}`;
+        } else {
+          applyModeClass();
+        }
+      }
     }
   }
 
