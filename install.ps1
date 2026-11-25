@@ -103,6 +103,17 @@ try {
     $zip.Dispose()
 }
 
+# Clear CEF browser cache so Spotify reloads updated index.html & kpotify.js
+$cacheDirs = @(
+    (Join-Path $env:LOCALAPPDATA "Spotify\Browser\Cache"),
+    (Join-Path $env:LOCALAPPDATA "Spotify\Browser\Code Cache")
+)
+foreach ($dir in $cacheDirs) {
+    if (Test-Path $dir) {
+        Remove-Item -Path $dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # 4. Restart Spotify
 if (-not $NoLaunch -and (Test-Path $spotifyExe)) {
     Write-Host "[4/4] Spotify를 다시 실행하는 중..." -ForegroundColor Green

@@ -488,6 +488,8 @@
       characterData: true,
     });
 
+    setInterval(scanLyrics, 1500);
+    window.addEventListener("load", scheduleScan);
     scheduleScan();
   }
 
