@@ -340,6 +340,22 @@
     }
   }
 
+  function polishLyricTranslation(text) {
+    return text
+      .replace(/\.+$/, "")
+      .replace(/\b당신을\b/g, "너를")
+      .replace(/\b당신이\b/g, "네가")
+      .replace(/\b당신은\b/g, "너는")
+      .replace(/\b당신의\b/g, "너의")
+      .replace(/\b당신에게\b/g, "너에게")
+      .replace(/\b당신과\b/g, "너와")
+      .replace(/\b당신\b/g, "너")
+      .replace(/습니다([.!?]?)$/g, "어$1")
+      .replace(/입니다([.!?]?)$/g, "야$1")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   async function fetchGoogleTranslate(text) {
     const gtxUrl =
       "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ko&dt=t&q=" +
@@ -396,10 +412,11 @@
 
   async function translateBatch(lines) {
     if (lines.length === 0) return;
+
     if (lines.length === 1) {
       const text = lines[0];
       try {
-        const translated = (await fetchGoogleTranslate(text)).trim();
+        const translated = polishLyricTranslation(await fetchGoogleTranslate(text));
         if (translated) {
           lastErrorMsg = "";
           cache.set(text, translated);
@@ -419,7 +436,7 @@
       if (parts.length === lines.length) {
         lastErrorMsg = "";
         for (let i = 0; i < lines.length; i++) {
-          const t = parts[i].trim();
+          const t = polishLyricTranslation(parts[i]);
           if (t) cache.set(lines[i], t);
         }
         scheduleSaveCache();
